@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>幻彩极光星尘 - Merry Christmas Master</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap" rel="stylesheet">
+    <style>
+        :root { --gold: #d4af37; --cream: #fceea7; --bg: #000000; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: var(--bg); font-family: 'Cinzel', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        
+        /* 密码验证层 */
+        #password-overlay {
+            position: fixed; inset: 0; background: #000; z-index: 1000;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.8s ease;
+        }
+        .pwd-box { text-align: center; width: 80%; max-width: 300px; }
+        .pwd-box h2 { color: var(--gold); letter-spacing: 2px; margin-bottom: 30px; font-family: 'Cinzel'; }
+        #pwd-input {
+            width: 100%; padding: 12px; background: transparent; border: 1px solid var(--gold);
+            color: white; text-align: center; font-size: 20px; outline: none; margin-bottom: 20px;
+        }
+        #unlock-btn {
+            background: var(--gold); color: black; border: none; padding: 10px 30px;
+            font-family: 'Cinzel'; font-weight: bold; cursor: pointer; letter-spacing: 2px;
+        }
+
+        /* UI层 */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; transition: opacity 0.8s ease; }
+        .ui-hidden { opacity: 0 !important; }
+
+        #loader { position: fixed; inset: 0; background: var(--bg); display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 100; transition: opacity 1s ease; }
+        .spinner { width: 40px; height: 40px; border: 2px solid rgba(212, 175, 55, 0.1); border-top: 2px solid var(--gold); border-radius: 50%; animation: spin 1s linear infinite; }
+        #loader p { margin-top: 20px; color: var(--gold); letter-spacing: 4px; font-size: 10px; }
+
+        h1 { position: absolute; top: 12%; width: 100%; text-align: center; font-size: 32px; margin: 0; background: linear-gradient(to bottom, #ffffff 0%, var(--gold) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; filter: drop-shadow(0 0 15px rgba(212, 175, 55, 0.5)); font-family: 'Cinzel'; }
+        
+        .upload-wrapper { position: absolute; bottom: 15%; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: auto; }
+        
+        /* 关键修改：FROM 狗蛋 按钮样式 */
+        .btn-upload { 
+            padding: 12px 35px; 
+            background: rgba(212, 175, 55, 0.1); 
+            border: 1px solid var(--gold); 
+            color: var(--gold); 
+            font-family: inherit; 
+            font-weight: bold;
+            font-size: 20px; 
+            cursor: pointer; 
+            letter-spacing: 2px;
+            box-shadow: 0 0 15px rgba(212, 175, 55, 0.2);
+            border-radius: 4px;
+        }
+        
+        .hint { margin-top: 15px; font-size: 10px; color: var(--cream); opacity: 0.6; letter-spacing: 1px; }
+
+        #cv-container { position: absolute; bottom: 10px; right: 10px; width: 80px; height: 60px; opacity: 0.3; pointer-events: none; border: 1px solid var(--gold); border-radius: 4px; overflow: hidden; }
+        #webcam { width: 100%; height: 100%; object-fit: cover; }
+        
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+        #photo-input { display: none; }
+    </style>
+</head>
+<body>
+
+<!-- 1. 密码验证层 -->
+<div id="password-overlay">
+    <div class="pwd-box">
+        <h2>ACCESS KEY</h2>
+        <input type="password" id="pwd-input" placeholder="请输入密码" maxlength="4">
+        <button id="unlock-btn">ENTER</button>
+        <p id="error-msg" style="color: #ff4d4d; font-size: 12px; margin-top: 10px; display: none;">密码错误，请重试</p>
+    </div>
+</div>
+
+<!-- 2. 加载层 -->
+<div id="loader">
+    <div class="spinner"></div>
+    <p>MASTERING THE LIGHTS</p>
+</div>
+
+<!-- 3. 主交互 UI -->
+<div id="ui-layer">
+    <h1>Merry Christmas Master</h1>
+    <div class="upload-wrapper">
+        <input type="file" id="photo-input" accept="image/*">
+        <!-- 文字已修改为 FROM 狗蛋 -->
+        <button class="btn-upload" onclick="document.getElementById('photo-input').click()">FROM 狗蛋</button>
+        <p class="hint">双指点击或双击屏幕隐藏控制</p>
+    </div>
+</div>
+
+<div id="cv-container">
+    <video id="webcam" autoplay playsinline muted></video>
+</div>
+
+<script type="importmap">
+{
+    "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm"
+    }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+const MODES = { TREE: 'TREE', SCATTER: 'SCATTER', FOCUS: 'FOCUS' };
+const STATE = { mode: MODES.TREE, palmPos: { x: 0, y: 0 }, targetPhoto: null, isUIHidden: false };
+
+// --- 极光着色器逻辑 ---
+const AuroraShader = {
+    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color("#66ffcc") }, uOpacity: { value: 0.25 } },
+    vertexShader: `varying vec2 vUv; uniform float uTime; float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); } float noise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f); return mix(mix(hash(i + vec2(0,0)), hash(i + vec2(1,0)), u.x), mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y); } void main() { vUv = uv; vec3 pos = position; float noiseVal = noise(vec2(pos.y * 0.05, uTime * 0.2)); pos.x += sin(pos.y * 0.1 + noiseVal * 5.0) * 10.0; pos.z += cos(pos.y * 0.1 + noiseVal * 5.0) * 10.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0); }`,
+    fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uColor; uniform float uOpacity; float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); } float noise(vec2 p) { vec2 i = floor(p); vec2 f = fract(p); vec2 u = f*f*(3.0-2.0*f); return mix(mix(hash(i + vec2(0,0)), hash(i + vec2(1,0)), u.x), mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), u.x), u.y); } float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; } return v; } void main() { vec2 uv = vUv; float t = uTime * 0.3; float curtain = noise(vec2(uv.x * 2.5 + t * 0.15, uv.y * 0.1)); float streaks = noise(vec2(uv.x * 15.0 - t * 0.8, uv.y * 0.3)); float noiseMask = fbm(vec2(uv.x * 4.0, uv.y * 2.0 + t * 0.2)); float intensity = pow(curtain, 3.0) * streaks * noiseMask * 2.5; float vFade = smoothstep(0.0, 0.45, uv.y) * smoothstep(1.0, 0.65, uv.y); float hFade = smoothstep(0.0, 0.3, uv.x) * smoothstep(1.0, 0.7, uv.x); vec3 finalColor = mix(uColor, vec3(0.3, 0.1, 0.6), uv.y * 0.5); gl_FragColor = vec4(finalColor, intensity * vFade * hFade * uOpacity); }`
+};
+
+class StarSpark {
+    constructor(mesh, index) {
+        this.mesh = mesh;
+        this.index = index;
+        this.randomSeed = Math.random() * 100;
+        this.jitter = new THREE.Vector3((Math.random()-0.5)*3.5, (Math.random()-0.5)*3.5, (Math.random()-0.5)*3.5);
+        this.targetPos = new THREE.Vector3();
+        this.baseScale = Math.random() * 0.5 + 0.2;
+        this.twinklePhase = Math.random() * Math.PI * 2;
+    }
+    update(time) {
+        this.mesh.position.lerp(this.targetPos, 0.04);
+        const twinkle = Math.sin(time * 2.5 + this.twinklePhase) * 0.4 + 0.8;
+        const s = THREE.MathUtils.lerp(this.mesh.scale.x, this.baseScale * twinkle, 0.1);
+        this.mesh.scale.set(s, s, s);
+    }
+}
+
+class MasterExperience {
+    constructor() {
+        this.sparks = [];
+        this.initScene();
+        this.initPost();
+        this.createNebulaTree();
+        this.createCinematicAurora();
+        this.initCV();
+        this.bindEvents();
+        this.animate();
+    }
+
+    initScene() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 1, 1000);
+        this.camera.position.set(0, 5, 65);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(this.renderer.domElement);
+        this.mainGroup = new THREE.Group();
+        this.scene.add(this.mainGroup);
+        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls.enableDamping = true;
+        this.controls.autoRotate = true;
+        this.controls.autoRotateSpeed = 0.5;
+        this.scene.add(new THREE.AmbientLight(0xffffff, 0.2));
+    }
+
+    initPost() {
+        this.composer = new EffectComposer(this.renderer);
+        this.composer.addPass(new RenderPass(this.scene, this.camera));
+        this.bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.7, 0.4, 0.85);
+        this.composer.addPass(this.bloomPass);
+    }
+
+    createNebulaTree() {
+        const geo = new THREE.SphereGeometry(0.15, 6, 6);
+        const colors = [0xffd700, 0xfff3b0, 0xd4af37, 0xffffff];
+        for (let i = 0; i < 900; i++) { // 针对 iPhone 性能优化粒子数
+            const mat = new THREE.MeshStandardMaterial({ color: colors[i % colors.length], emissive: colors[i % colors.length], emissiveIntensity: 5 });
+            const m = new THREE.Mesh(geo, mat);
+            this.mainGroup.add(m);
+            this.sparks.push(new StarSpark(m, i));
+        }
+    }
+
+    createCinematicAurora() {
+        this.auroraMeshes = [];
+        const colors = ["#44ffcc", "#8866ff"]; 
+        for (let j = 0; j < 2; j++) {
+            const geo = new THREE.CylinderGeometry(85, 85, 50, 64, 32, true, j * Math.PI, Math.PI);
+            const mat = new THREE.ShaderMaterial({
+                uniforms: THREE.UniformsUtils.clone(AuroraShader.uniforms),
+                vertexShader: AuroraShader.vertexShader,
+                fragmentShader: AuroraShader.fragmentShader,
+                transparent: true, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false
+            });
+            mat.uniforms.uColor.value.set(colors[j]);
+            const mesh = new THREE.Mesh(geo, mat);
+            this.scene.add(mesh); 
+            this.auroraMeshes.push(mesh);
+        }
+    }
+
+    async initCV() {
+        try {
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+            this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, delegate: "GPU" },
+                runningMode: "VIDEO", numHands: 1
+            });
+            const video = document.getElementById('webcam');
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } } 
+            });
+            video.srcObject = stream;
+            video.onloadeddata = () => {
+                document.getElementById('loader').style.opacity = '0';
+                setTimeout(() => document.getElementById('loader').style.display = 'none', 1000);
+                this.predict();
+            };
+        } catch (e) {
+            alert("摄像头开启失败。提示：iPhone 必须在 HTTPS 环境下才能使用摄像头。");
+            document.getElementById('loader').style.display = 'none';
+        }
+    }
+
+    predict() {
+        if (!this.handLandmarker) return;
+        const results = this.handLandmarker.detectForVideo(document.getElementById('webcam'), performance.now());
+        if (results.landmarks && results.landmarks.length > 0) {
+            const lm = results.landmarks[0];
+            const d = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+            const pinch = d(lm[4], lm[8]);
+            const fingerExt = (d(lm[12], lm[0]) + d(lm[16], lm[0]) + d(lm[20], lm[0]))/3;
+
+            if (pinch < 0.06) {
+                const photos = this.sparks.filter(s => s.index === 'PHOTO');
+                if (photos.length > 0) {
+                    STATE.mode = MODES.FOCUS;
+                    STATE.targetPhoto = photos[photos.length - 1];
+                }
+            } else if (fingerExt < 0.28) STATE.mode = MODES.TREE;
+            else if (fingerExt > 0.45) STATE.mode = MODES.SCATTER;
+
+            STATE.palmPos.x = (lm[9].x - 0.5) * 2.0;
+            STATE.palmPos.y = (lm[9].y - 0.5) * 2.0;
+        }
+        requestAnimationFrame(() => this.predict());
+    }
+
+    bindEvents() {
+        // 双击屏幕隐藏控制 (iPhone交互优化)
+        window.addEventListener('dblclick', () => {
+            STATE.isUIHidden = !STATE.isUIHidden;
+            document.getElementById('ui-layer').classList.toggle('ui-hidden', STATE.isUIHidden);
+        });
+
+        // 针对没有双击的触摸情况（双指点击）
+        window.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                STATE.isUIHidden = !STATE.isUIHidden;
+                document.getElementById('ui-layer').classList.toggle('ui-hidden', STATE.isUIHidden);
+            }
+        });
+        
+        document.getElementById('photo-input').addEventListener('change', (e) => {
+            const f = e.target.files[0];
+            if (f) {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    new THREE.TextureLoader().load(ev.target.result, (t) => {
+                        t.colorSpace = THREE.SRGBColorSpace;
+                        const group = new THREE.Group();
+                        const plane = new THREE.Mesh(
+                            new THREE.PlaneGeometry(8, 10),
+                            new THREE.MeshBasicMaterial({ map: t, side: THREE.DoubleSide })
+                        );
+                        group.add(plane);
+                        this.mainGroup.add(group);
+                        this.sparks.push(new StarSpark(group, 'PHOTO'));
+                    });
+                }
+                reader.readAsDataURL(f);
+            }
+        });
+
+        window.addEventListener('resize', () => {
+            this.camera.aspect = window.innerWidth/window.innerHeight;
+            this.camera.updateProjectionMatrix();
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        const time = performance.now() * 0.001;
+        this.mainGroup.rotation.y = THREE.MathUtils.lerp(this.mainGroup.rotation.y, STATE.palmPos.x * 0.5, 0.05);
+        this.auroraMeshes.forEach(m => m.material.uniforms.uTime.value = time);
+        
+        this.sparks.forEach((s, i) => {
+            if (STATE.mode === MODES.TREE) {
+                const t = (i % 900) / 900;
+                const angle = t * Math.PI * 40 + time * 0.4;
+                const r = (1 - t) * 15 + s.jitter.x;
+                s.targetPos.set(Math.cos(angle)*r, t * 30 - 15, Math.sin(angle)*r);
+            } else if (STATE.mode === MODES.SCATTER) {
+                s.targetPos.set(s.jitter.x*22, s.jitter.y*22, s.jitter.z*22);
+            } else if (STATE.mode === MODES.FOCUS && s === STATE.targetPhoto) {
+                s.targetPos.set(0, 0, 35);
+            }
+            s.update(time);
+        });
+        this.controls.update();
+        this.composer.render();
+    }
+}
+
+// 密码验证逻辑
+const pwdInput = document.getElementById('pwd-input');
+const unlockBtn = document.getElementById('unlock-btn');
+const overlay = document.getElementById('password-overlay');
+
+unlockBtn.addEventListener('click', () => {
+    if (pwdInput.value === '7788') {
+        overlay.style.opacity = '0';
+        setTimeout(() => overlay.remove(), 800);
+        document.getElementById('loader').style.display = 'flex';
+        new MasterExperience();
+    } else {
+        document.getElementById('error-msg').style.display = 'block';
+        pwdInput.value = '';
+        // 抖动效果
+        pwdInput.style.borderColor = 'red';
+        setTimeout(() => pwdInput.style.borderColor = '#d4af37', 500);
+    }
+});
+
+// 支持回车解锁
+pwdInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') unlockBtn.click();
+});
+</script>
+</body>
+</html>
